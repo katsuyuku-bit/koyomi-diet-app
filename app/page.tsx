@@ -614,14 +614,14 @@ export default function Page() {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
 
-      const reviewRes = await fetch("/api/review", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({ weight, note: noteForReview }),
-      });
+      const reviewRes = await fetch("https://koyomi-diet-app.vercel.app/api/review", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  signal: controller.signal,
+  body: JSON.stringify({ weight, note: noteForReview }),
+});
 
       clearTimeout(timer);
 
