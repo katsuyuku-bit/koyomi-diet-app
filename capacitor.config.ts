@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "きみとダイエット",
   webDir: "out",
   server: {
-    url: "https://あなたの-vercel-url.vercel.app",
+    url: "https://koyomi-diet-app.vercel.app",
     cleartext: false,
   },
 };
