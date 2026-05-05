@@ -71,6 +71,8 @@ const INITIAL_CHAT_MESSAGES: ChatMessage[] = [
   },
 ];
 
+const DAILY_CHAT_LIMIT = 15;
+
 const HOME_DISPLAYS: HomeDisplay[] = [
   {
     image: "/koyomi_normal.png",
@@ -254,7 +256,10 @@ export default function Page() {
     useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-
+const [chatCountToday, setChatCountToday] = useState(0);
+const [showReviewConfirm, setShowReviewConfirm] = useState(false);
+const [hideReviewConfirm, setHideReviewConfirm] = useState(false);
+const [reviewLockedToday, setReviewLockedToday] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const today = formatLocalDate(new Date());
@@ -594,11 +599,41 @@ export default function Page() {
   }
 
   useEffect(() => {
-    setHomeBackground(getTimeBackground());
-    loadHistory();
-    loadProgress();
-  }, []);
+  setHomeBackground(getTimeBackground());
+  loadHistory();
+  loadProgress();
 
+  const hideConfirm = localStorage.getItem("hideReviewConfirm") === "true";
+  setHideReviewConfirm(hideConfirm);
+
+  const reviewedDate = localStorage.getItem("reviewedDate");
+  setReviewLockedToday(reviewedDate === today);
+
+  const chatDate = localStorage.getItem("chatDate");
+  const savedChatCount = Number(localStorage.getItem("chatCountToday") || "0");
+
+  if (chatDate === today) {
+    setChatCountToday(savedChatCount);
+  } else {
+    localStorage.setItem("chatDate", today);
+    localStorage.setItem("chatCountToday", "0");
+    setChatCountToday(0);
+  }
+}, []);
+function requestReviewSave() {
+  if (reviewLockedToday) {
+    setMessage("今日のレビューはもう作成済みだよ。レビューは一日に一回だけ作れるよ。");
+    setTab("home");
+    return;
+  }
+
+  if (hideReviewConfirm) {
+    handleSave();
+    return;
+  }
+
+  setShowReviewConfirm(true);
+}
   async function handleSave() {
   setLoading(true);
   setMessage("こよみが考え中...");
@@ -695,10 +730,13 @@ export default function Page() {
 
     await addAffection(points);
 
-    setReview(reviewText);
-    setMood(nextMood);
-    setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
-    setTab("home");
+    localStorage.setItem("reviewedDate", today);
+setReviewLockedToday(true);
+
+setReview(reviewText);
+setMood(nextMood);
+setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
+setTab("home");
 
     await loadHistory();
 
@@ -710,54 +748,72 @@ export default function Page() {
 }
 
   async function sendChat() {
-    const text = chatInput.trim();
-    if (!text || chatLoading) return;
+  const text = chatInput.trim();
+  if (!text || chatLoading) return;
 
-    const nextMessages: ChatMessage[] = [
+  if (chatCountToday >= DAILY_CHAT_LIMIT) {
+    setChatMessages([
       ...chatMessages,
-      { role: "user", text },
-    ];
-
-    setChatMessages(nextMessages);
+      {
+        role: "ai",
+        text: "今日の雑談回数はここまでだよ。また明日こよみと話そ。",
+        expression: "amae",
+      },
+    ]);
     setChatInput("");
-    setChatLoading(true);
+    return;
+  }
 
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
+  const nextMessages: ChatMessage[] = [
+    ...chatMessages,
+    { role: "user", text },
+  ];
 
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({ messages: nextMessages }),
-      });
+  setChatMessages(nextMessages);
+  setChatInput("");
+  setChatLoading(true);
 
-      clearTimeout(timer);
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
 
-      if (!res.ok) {
-        throw new Error("chat api failed");
-      }
+    const res = await fetch("https://koyomi-diet-app.vercel.app/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({ messages: nextMessages }),
+    });
 
-      const data = await res.json();
+    clearTimeout(timer);
 
-      setChatMessages([
-        ...nextMessages,
-        {
-          role: "ai",
-          text: data.text ?? fallbackChatReply(text).text,
-          expression: data.expression ?? fallbackChatReply(text).expression,
-        },
-      ]);
-    } catch {
-      setChatMessages([...nextMessages, fallbackChatReply(text)]);
+    if (!res.ok) {
+      throw new Error("chat api failed");
     }
 
-    await addAffection(1);
-    setChatLoading(false);
+    const data = await res.json();
+
+    setChatMessages([
+      ...nextMessages,
+      {
+        role: "ai",
+        text: data.text ?? fallbackChatReply(text).text,
+        expression: data.expression ?? fallbackChatReply(text).expression,
+      },
+    ]);
+  } catch {
+    setChatMessages([...nextMessages, fallbackChatReply(text)]);
   }
+
+  const nextChatCount = chatCountToday + 1;
+  setChatCountToday(nextChatCount);
+  localStorage.setItem("chatDate", today);
+  localStorage.setItem("chatCountToday", String(nextChatCount));
+
+  await addAffection(1);
+  setChatLoading(false);
+}
 
   function loadLogToForm(log: DailyLog) {
     setWeight(log.weight ?? "");
@@ -852,7 +908,7 @@ export default function Page() {
                 </button>
 
                 <button
-                  onClick={handleSave}
+                  onClick={requestReviewSave}
                   disabled={loading}
                   className="w-full rounded-2xl bg-gradient-to-br from-pink-400 to-violet-400 p-3 text-left font-bold text-white shadow disabled:opacity-60"
                 >
@@ -966,6 +1022,9 @@ export default function Page() {
               <p className="text-sm leading-6 text-slate-700">
                 記録以外の話もここでできるよ。短めに話しかけてみて。
               </p>
+              <div className="mt-2 text-xs font-bold text-slate-500">
+  今日の残り雑談回数：{Math.max(0, DAILY_CHAT_LIMIT - chatCountToday)}回
+</div>
             </div>
 
             <div className="mt-4 max-h-[420px] space-y-4 overflow-y-auto rounded-3xl bg-pink-50 p-3">
@@ -1367,6 +1426,50 @@ export default function Page() {
           ))}
         </div>
       </div>
+      {showReviewConfirm && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+    <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-xl">
+      <div className="text-lg font-extrabold text-pink-500">
+        本日分のレビューを生成しますか？
+      </div>
+
+      <p className="mt-3 text-sm leading-7 text-slate-700">
+        レビューは一日に一回しか作成できません。
+      </p>
+
+      <label className="mt-4 flex items-center gap-2 text-sm font-bold text-slate-600">
+        <input
+          type="checkbox"
+          checked={hideReviewConfirm}
+          onChange={(e) => {
+            setHideReviewConfirm(e.target.checked);
+            localStorage.setItem("hideReviewConfirm", String(e.target.checked));
+          }}
+        />
+        次から表示しない
+      </label>
+
+      <div className="mt-5 flex gap-2">
+        <button
+          onClick={() => setShowReviewConfirm(false)}
+          className="flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600"
+        >
+          キャンセル
+        </button>
+
+        <button
+          onClick={() => {
+            setShowReviewConfirm(false);
+            handleSave();
+          }}
+          className="flex-1 rounded-2xl bg-pink-500 px-4 py-3 text-sm font-bold text-white"
+        >
+          生成する
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </main>
   );
 }
