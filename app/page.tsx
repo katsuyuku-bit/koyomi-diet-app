@@ -686,9 +686,14 @@ export default function Page() {
       await addAffection(points);
 
       setReview(reviewText);
-      setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
-      setTab("home");
-      await loadHistory();
+setMood(nextMood);
+setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
+setTab("home");
+
+await loadHistory();
+
+setReview(reviewText);
+setMood(nextMood);
     }
 
     setLoading(false);
