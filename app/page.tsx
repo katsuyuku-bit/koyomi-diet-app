@@ -256,10 +256,10 @@ export default function Page() {
     useState<ChatMessage[]>(INITIAL_CHAT_MESSAGES);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-const [chatCountToday, setChatCountToday] = useState(0);
-const [showReviewConfirm, setShowReviewConfirm] = useState(false);
-const [hideReviewConfirm, setHideReviewConfirm] = useState(false);
-const [reviewLockedToday, setReviewLockedToday] = useState(false);
+  const [chatCountToday, setChatCountToday] = useState(0);
+  const [showReviewConfirm, setShowReviewConfirm] = useState(false);
+  const [hideReviewConfirm, setHideReviewConfirm] = useState(false);
+  const [reviewLockedToday, setReviewLockedToday] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const today = formatLocalDate(new Date());
@@ -477,48 +477,70 @@ const [reviewLockedToday, setReviewLockedToday] = useState(false);
   }
 
   async function getOrCreateProfile() {
-    let { data: profiles } = await supabase
+    const { data: profiles, error: selectError } = await supabase
       .from("diet_profiles")
       .select("*")
       .limit(1);
 
+    if (selectError) {
+      console.error("diet_profiles select error:", selectError);
+      return null;
+    }
+
     let profile = profiles?.[0];
 
     if (!profile) {
-      const { data } = await supabase
+      const { data, error: insertError } = await supabase
         .from("diet_profiles")
         .insert({
           nickname: "テストユーザー",
-          goal_weight: "65",
+          goal_weight: 65,
         })
-        .select();
+        .select()
+        .single();
 
-      profile = data?.[0];
+      if (insertError) {
+        console.error("diet_profiles insert error:", insertError);
+        return null;
+      }
+
+      profile = data;
     }
 
     return profile;
   }
 
   async function getOrCreateProgress(profileId: string) {
-    const { data } = await supabase
+    const { data, error: selectError } = await supabase
       .from("koyomi_progress")
       .select("*")
       .eq("profile_id", profileId)
       .limit(1);
 
+    if (selectError) {
+      console.error("koyomi_progress select error:", selectError);
+      return null;
+    }
+
     let row = data?.[0];
 
     if (!row) {
-      const { data: inserted } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from("koyomi_progress")
         .insert({
           profile_id: profileId,
           affection: 0,
           unlocked_story_ids: ["story_1"],
         })
-        .select();
+        .select()
+        .single();
 
-      row = inserted?.[0];
+      if (insertError) {
+        console.error("koyomi_progress insert error:", insertError);
+        return null;
+      }
+
+      row = inserted;
     }
 
     if (row) {
@@ -599,28 +621,29 @@ const [reviewLockedToday, setReviewLockedToday] = useState(false);
   }
 
   useEffect(() => {
-  setHomeBackground(getTimeBackground());
-  loadHistory();
-  loadProgress();
+    setHomeBackground(getTimeBackground());
+    loadHistory();
+    loadProgress();
 
-  const hideConfirm = localStorage.getItem("hideReviewConfirm") === "true";
-  setHideReviewConfirm(hideConfirm);
+    const hideConfirm = localStorage.getItem("hideReviewConfirm") === "true";
+    setHideReviewConfirm(hideConfirm);
 
-  const reviewedDate = localStorage.getItem("reviewedDate");
-  setReviewLockedToday(reviewedDate === today);
+    const reviewedDate = localStorage.getItem("reviewedDate");
+    setReviewLockedToday(reviewedDate === today);
 
-  const chatDate = localStorage.getItem("chatDate");
-  const savedChatCount = Number(localStorage.getItem("chatCountToday") || "0");
+    const chatDate = localStorage.getItem("chatDate");
+    const savedChatCount = Number(localStorage.getItem("chatCountToday") || "0");
 
-  if (chatDate === today) {
-    setChatCountToday(savedChatCount);
-  } else {
-    localStorage.setItem("chatDate", today);
-    localStorage.setItem("chatCountToday", "0");
-    setChatCountToday(0);
-  }
-}, []);
-function requestReviewSave() {
+    if (chatDate === today) {
+      setChatCountToday(savedChatCount);
+    } else {
+      localStorage.setItem("chatDate", today);
+      localStorage.setItem("chatCountToday", "0");
+      setChatCountToday(0);
+    }
+  }, []);
+
+  function requestReviewSave() {
   if (reviewLockedToday) {
     setMessage("今日のレビューはもう作成済みだよ。レビューは一日に一回だけ作れるよ。");
     setTab("home");
@@ -635,94 +658,104 @@ function requestReviewSave() {
   setShowReviewConfirm(true);
 }
   async function handleSave() {
-  setLoading(true);
-  setMessage("こよみが考え中...");
-  setReview("");
+    setLoading(true);
+    setMessage("こよみが考え中...");
+    setReview("");
 
-  const fallbackMood = decideMood();
-  const noteForReview = buildReviewNote();
+    const fallbackMood = decideMood();
+    const noteForReview = buildReviewNote();
 
-  let reviewText = "";
-  let nextMood: Mood = fallbackMood;
+    let reviewText = "";
+    let nextMood: Mood = fallbackMood;
 
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
 
-    const reviewRes = await fetch("https://koyomi-diet-app.vercel.app/api/review", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
+      const reviewRes = await fetch("/api/review", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          weight,
+          note: noteForReview,
+          meals: {
+            breakfast,
+            lunch,
+            dinner,
+            snack,
+          },
+          exercise,
+        }),
+      });
+
+      clearTimeout(timer);
+
+      if (!reviewRes.ok) {
+        throw new Error("review api failed");
+      }
+
+      const reviewData = await reviewRes.json();
+      const fallback = fallbackReviewText(weight, noteForReview);
+
+      reviewText = reviewData.text ?? fallback.text;
+      nextMood = reviewData.emotion ?? fallback.emotion;
+    } catch {
+      const fallback = fallbackReviewText(weight, noteForReview);
+      reviewText = fallback.text;
+      nextMood = fallback.emotion;
+    }
+
+    setReview(reviewText);
+    setMood(nextMood);
+
+    const profile = await getOrCreateProfile();
+
+    if (!profile) {
+      localStorage.setItem("reviewedDate", today);
+      setReviewLockedToday(true);
+      setMessage("レビューは作れたけど、プロフィール保存に失敗したよ。Supabase設定を確認してね。");
+      setTab("home");
+      setLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.from("daily_logs").upsert(
+      {
+        profile_id: profile.id,
+        log_date: today,
         weight,
-        note: noteForReview,
-        meals: {
+        condition_note: conditionNote,
+        meals_json: {
           breakfast,
           lunch,
           dinner,
           snack,
         },
-        exercise,
-      }),
-    });
+        exercise_json: {
+          memo: exercise,
+        },
+        review_json: {
+          text: reviewText,
+          mood: nextMood,
+        },
+      },
+      {
+        onConflict: "profile_id,log_date",
+      }
+    );
 
-    clearTimeout(timer);
-
-    if (!reviewRes.ok) {
-      throw new Error("review api failed");
+    if (error) {
+      localStorage.setItem("reviewedDate", today);
+      setReviewLockedToday(true);
+      setMessage("レビューは作れたけど、記録保存に失敗したよ: " + error.message);
+      setTab("home");
+      setLoading(false);
+      return;
     }
 
-    const reviewData = await reviewRes.json();
-    const fallback = fallbackReviewText(weight, noteForReview);
-
-    reviewText = reviewData.text ?? fallback.text;
-    nextMood = reviewData.emotion ?? fallback.emotion;
-  } catch {
-    const fallback = fallbackReviewText(weight, noteForReview);
-    reviewText = fallback.text;
-    nextMood = fallback.emotion;
-  }
-
-  setMood(nextMood);
-
-  const profile = await getOrCreateProfile();
-
-  if (!profile) {
-    setMessage("プロフィール作成失敗");
-    setLoading(false);
-    return;
-  }
-
-  const { error } = await supabase.from("daily_logs").upsert(
-    {
-      profile_id: profile.id,
-      log_date: today,
-      weight,
-      condition_note: conditionNote,
-      meals_json: {
-        breakfast,
-        lunch,
-        dinner,
-        snack,
-      },
-      exercise_json: {
-        memo: exercise,
-      },
-      review_json: {
-        text: reviewText,
-        mood: nextMood,
-      },
-    },
-    {
-      onConflict: "profile_id,log_date",
-    }
-  );
-
-  if (error) {
-    setMessage("保存失敗: " + error.message);
-  } else {
     let points = 5;
     if (getMealCount() > 0) points += 2;
     if (exercise.trim()) points += 3;
@@ -731,89 +764,85 @@ function requestReviewSave() {
     await addAffection(points);
 
     localStorage.setItem("reviewedDate", today);
-setReviewLockedToday(true);
-
-setReview(reviewText);
-setMood(nextMood);
-setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
-setTab("home");
-
-    await loadHistory();
+    setReviewLockedToday(true);
 
     setReview(reviewText);
     setMood(nextMood);
-  }
+    setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
+    setTab("home");
 
-  setLoading(false);
-}
+    await loadHistory();
+    setLoading(false);
+  }
 
   async function sendChat() {
-  const text = chatInput.trim();
-  if (!text || chatLoading) return;
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
 
-  if (chatCountToday >= DAILY_CHAT_LIMIT) {
-    setChatMessages([
-      ...chatMessages,
-      {
-        role: "ai",
-        text: "今日の雑談回数はここまでだよ。また明日こよみと話そ。",
-        expression: "amae",
-      },
-    ]);
-    setChatInput("");
-    return;
-  }
-
-  const nextMessages: ChatMessage[] = [
-    ...chatMessages,
-    { role: "user", text },
-  ];
-
-  setChatMessages(nextMessages);
-  setChatInput("");
-  setChatLoading(true);
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-
-    const res = await fetch("https://koyomi-diet-app.vercel.app/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({ messages: nextMessages }),
-    });
-
-    clearTimeout(timer);
-
-    if (!res.ok) {
-      throw new Error("chat api failed");
+    if (chatCountToday >= DAILY_CHAT_LIMIT) {
+      setChatMessages([
+        ...chatMessages,
+        {
+          role: "ai",
+          text: "今日の雑談回数はここまでだよ。また明日こよみと話そ。",
+          expression: "amae",
+        },
+      ]);
+      setChatInput("");
+      return;
     }
 
-    const data = await res.json();
+    const nextMessages: ChatMessage[] = [
+      ...chatMessages,
+      { role: "user", text },
+    ];
 
-    setChatMessages([
-      ...nextMessages,
-      {
-        role: "ai",
-        text: data.text ?? fallbackChatReply(text).text,
-        expression: data.expression ?? fallbackChatReply(text).expression,
-      },
-    ]);
-  } catch {
-    setChatMessages([...nextMessages, fallbackChatReply(text)]);
+    setChatMessages(nextMessages);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({ messages: nextMessages }),
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        throw new Error("chat api failed");
+      }
+
+      const data = await res.json();
+      const fallback = fallbackChatReply(text);
+
+      setChatMessages([
+        ...nextMessages,
+        {
+          role: "ai",
+          text: data.text ?? fallback.text,
+          expression: data.expression ?? fallback.expression,
+        },
+      ]);
+    } catch {
+      setChatMessages([...nextMessages, fallbackChatReply(text)]);
+    } finally {
+      const nextChatCount = chatCountToday + 1;
+      setChatCountToday(nextChatCount);
+      localStorage.setItem("chatDate", today);
+      localStorage.setItem("chatCountToday", String(nextChatCount));
+
+      await addAffection(1);
+      setChatLoading(false);
+    }
   }
-
-  const nextChatCount = chatCountToday + 1;
-  setChatCountToday(nextChatCount);
-  localStorage.setItem("chatDate", today);
-  localStorage.setItem("chatCountToday", String(nextChatCount));
-
-  await addAffection(1);
-  setChatLoading(false);
-}
 
   function loadLogToForm(log: DailyLog) {
     setWeight(log.weight ?? "");
@@ -1023,8 +1052,8 @@ setTab("home");
                 記録以外の話もここでできるよ。短めに話しかけてみて。
               </p>
               <div className="mt-2 text-xs font-bold text-slate-500">
-  今日の残り雑談回数：{Math.max(0, DAILY_CHAT_LIMIT - chatCountToday)}回
-</div>
+                今日の残り雑談回数：{Math.max(0, DAILY_CHAT_LIMIT - chatCountToday)}回
+              </div>
             </div>
 
             <div className="mt-4 max-h-[420px] space-y-4 overflow-y-auto rounded-3xl bg-pink-50 p-3">
