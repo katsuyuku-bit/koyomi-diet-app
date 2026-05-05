@@ -600,104 +600,114 @@ export default function Page() {
   }, []);
 
   async function handleSave() {
-    setLoading(true);
-    setMessage("こよみが考え中...");
-    setReview("");
+  setLoading(true);
+  setMessage("こよみが考え中...");
+  setReview("");
 
-    const fallbackMood = decideMood();
-    const noteForReview = buildReviewNote();
+  const fallbackMood = decideMood();
+  const noteForReview = buildReviewNote();
 
-    let reviewText = "";
-    let nextMood: Mood = fallbackMood;
+  let reviewText = "";
+  let nextMood: Mood = fallbackMood;
 
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
 
-      const reviewRes = await fetch("https://koyomi-diet-app.vercel.app/api/review", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  signal: controller.signal,
-  body: JSON.stringify({ weight, note: noteForReview }),
-});
-
-      clearTimeout(timer);
-
-      if (!reviewRes.ok) {
-        throw new Error("review api failed");
-      }
-
-      const reviewData = await reviewRes.json();
-      const fallback = fallbackReviewText(weight, noteForReview);
-
-      reviewText = reviewData.text ?? fallback.text;
-      nextMood = reviewData.emotion ?? fallback.emotion;
-    } catch {
-      const fallback = fallbackReviewText(weight, noteForReview);
-      reviewText = fallback.text;
-      nextMood = fallback.emotion;
-    }
-
-    setMood(nextMood);
-
-    const profile = await getOrCreateProfile();
-
-    if (!profile) {
-      setMessage("プロフィール作成失敗");
-      setLoading(false);
-      return;
-    }
-
-    const { error } = await supabase.from("daily_logs").upsert(
-      {
-        profile_id: profile.id,
-        log_date: today,
+    const reviewRes = await fetch("https://koyomi-diet-app.vercel.app/api/review", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
         weight,
-        condition_note: conditionNote,
-        meals_json: {
+        note: noteForReview,
+        meals: {
           breakfast,
           lunch,
           dinner,
           snack,
         },
-        exercise_json: {
-          memo: exercise,
-        },
-        review_json: {
-          text: reviewText,
-          mood: nextMood,
-        },
-      },
-      {
-        onConflict: "profile_id,log_date",
-      }
-    );
+        exercise,
+      }),
+    });
 
-    if (error) {
-      setMessage("保存失敗: " + error.message);
-    } else {
-      let points = 5;
-      if (getMealCount() > 0) points += 2;
-      if (exercise.trim()) points += 3;
-      if (weight.trim()) points += 1;
+    clearTimeout(timer);
 
-      await addAffection(points);
-
-      setReview(reviewText);
-setMood(nextMood);
-setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
-setTab("home");
-
-await loadHistory();
-
-setReview(reviewText);
-setMood(nextMood);
+    if (!reviewRes.ok) {
+      throw new Error("review api failed");
     }
 
-    setLoading(false);
+    const reviewData = await reviewRes.json();
+    const fallback = fallbackReviewText(weight, noteForReview);
+
+    reviewText = reviewData.text ?? fallback.text;
+    nextMood = reviewData.emotion ?? fallback.emotion;
+  } catch {
+    const fallback = fallbackReviewText(weight, noteForReview);
+    reviewText = fallback.text;
+    nextMood = fallback.emotion;
   }
+
+  setMood(nextMood);
+
+  const profile = await getOrCreateProfile();
+
+  if (!profile) {
+    setMessage("プロフィール作成失敗");
+    setLoading(false);
+    return;
+  }
+
+  const { error } = await supabase.from("daily_logs").upsert(
+    {
+      profile_id: profile.id,
+      log_date: today,
+      weight,
+      condition_note: conditionNote,
+      meals_json: {
+        breakfast,
+        lunch,
+        dinner,
+        snack,
+      },
+      exercise_json: {
+        memo: exercise,
+      },
+      review_json: {
+        text: reviewText,
+        mood: nextMood,
+      },
+    },
+    {
+      onConflict: "profile_id,log_date",
+    }
+  );
+
+  if (error) {
+    setMessage("保存失敗: " + error.message);
+  } else {
+    let points = 5;
+    if (getMealCount() > 0) points += 2;
+    if (exercise.trim()) points += 3;
+    if (weight.trim()) points += 1;
+
+    await addAffection(points);
+
+    setReview(reviewText);
+    setMood(nextMood);
+    setMessage(`保存成功！ こよみとの仲が少し深まったよ。+${points}`);
+    setTab("home");
+
+    await loadHistory();
+
+    setReview(reviewText);
+    setMood(nextMood);
+  }
+
+  setLoading(false);
+}
 
   async function sendChat() {
     const text = chatInput.trim();
