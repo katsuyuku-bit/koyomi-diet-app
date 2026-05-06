@@ -641,7 +641,7 @@ function requestReviewSave() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 12000);
 
-    const reviewRes = await fetch("https://koyomi-diet-app.vercel.app/api/review", {
+    const reviewRes = await fetch("/api/review", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -767,7 +767,7 @@ setTab("home");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
 
-    const res = await fetch("https://koyomi-diet-app.vercel.app/api/chat", {
+    const res = await fetch("/api/chat", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
