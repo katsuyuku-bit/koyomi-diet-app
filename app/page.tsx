@@ -776,73 +776,73 @@ export default function Page() {
   }
 
   async function sendChat() {
-    const text = chatInput.trim();
-    if (!text || chatLoading) return;
+  const text = chatInput.trim();
+  if (!text || chatLoading) return;
 
-    if (chatCountToday >= DAILY_CHAT_LIMIT) {
-      setChatMessages([
-        ...chatMessages,
-        {
-          role: "ai",
-          text: "今日の雑談回数はここまでだよ。また明日こよみと話そ。",
-          expression: "amae",
-        },
-      ]);
-      setChatInput("");
-      return;
-    }
-
-    const nextMessages: ChatMessage[] = [
+  if (chatCountToday >= DAILY_CHAT_LIMIT) {
+    setChatMessages([
       ...chatMessages,
-      { role: "user", text },
-    ];
-
-    setChatMessages(nextMessages);
+      {
+        role: "ai",
+        text: "今日の雑談回数はここまでだよ。また明日こよみと話そ。",
+        expression: "amae",
+      },
+    ]);
     setChatInput("");
-    setChatLoading(true);
-
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({ messages: nextMessages }),
-      });
-
-      clearTimeout(timer);
-
-      if (!res.ok) {
-        throw new Error("chat api failed");
-      }
-
-      const data = await res.json();
-      const fallback = fallbackChatReply(text);
-
-      setChatMessages([
-        ...nextMessages,
-        {
-          role: "ai",
-          text: data.text ?? fallback.text,
-          expression: data.expression ?? fallback.expression,
-        },
-      ]);
-    } catch {
-      setChatMessages([...nextMessages, fallbackChatReply(text)]);
-    } finally {
-      const nextChatCount = chatCountToday + 1;
-      setChatCountToday(nextChatCount);
-      localStorage.setItem("chatDate", today);
-      localStorage.setItem("chatCountToday", String(nextChatCount));
-
-      await addAffection(1);
-      setChatLoading(false);
-    }
+    return;
   }
+
+  const nextMessages: ChatMessage[] = [
+    ...chatMessages,
+    { role: "user", text },
+  ];
+
+  setChatMessages(nextMessages);
+  setChatInput("");
+  setChatLoading(true);
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({ messages: nextMessages }),
+    });
+
+    clearTimeout(timer);
+
+    if (!res.ok) throw new Error("chat api failed");
+
+    const data = await res.json();
+
+    setChatMessages([
+      ...nextMessages,
+      {
+        role: "ai",
+        text: data.text ?? fallbackChatReply(text).text,
+        expression: data.expression ?? fallbackChatReply(text).expression,
+      },
+    ]);
+  } catch {
+    setChatMessages([...nextMessages, fallbackChatReply(text)]);
+  } finally {
+    const nextChatCount = chatCountToday + 1;
+    setChatCountToday(nextChatCount);
+    localStorage.setItem("chatDate", today);
+    localStorage.setItem("chatCountToday", String(nextChatCount));
+
+    addAffection(1).catch((error) => {
+      console.error("chat addAffection failed:", error);
+    });
+
+    setChatLoading(false);
+  }
+}
 
   function loadLogToForm(log: DailyLog) {
     setWeight(log.weight ?? "");
