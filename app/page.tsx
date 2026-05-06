@@ -644,11 +644,13 @@ export default function Page() {
   }, []);
 
   function requestReviewSave() {
-  if (reviewLockedToday) {
-    setMessage("今日のレビューはもう作成済みだよ。レビューは一日に一回だけ作れるよ。");
-    setTab("home");
+  if (hideReviewConfirm) {
+    handleSave();
     return;
   }
+
+  setShowReviewConfirm(true);
+}
 
   if (hideReviewConfirm) {
     handleSave();
